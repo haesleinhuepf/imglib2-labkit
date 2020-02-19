@@ -39,7 +39,7 @@ class TrainableSegmentationSettingsDialog {
 	public static void main(String... args) {
 		Classifier defaultWekaClassifier = new FastRandomForest();
 		FeatureSettings defaultFeatureSettings = new FeatureSettings(GlobalSettings
-			.default2dSettings(), GroupedFeatures.gauss());
+			.default2d().build(), GroupedFeatures.gauss());
 		TrainableSegmentationSettingsDialog dialog =
 			new TrainableSegmentationSettingsDialog(new Context(), null,
 				defaultWekaClassifier, defaultFeatureSettings);

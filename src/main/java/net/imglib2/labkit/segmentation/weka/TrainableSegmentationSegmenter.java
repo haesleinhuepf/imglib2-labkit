@@ -91,17 +91,18 @@ public class TrainableSegmentationSegmenter implements Segmenter {
 		InputImage inputImage)
 	{
 		final ChannelSetting channelSetting = getChannelSetting(inputImage);
-		GlobalSettings globalSettings = new GlobalSettings(channelSetting,
-			inputImage.getSpatialDimensions(), 1.0, 8.0, 1.0);
+		GlobalSettings globalSettings = GlobalSettings.default2d().channels(
+			channelSetting).sigmaRange(1.0, 8.0).build();
 		this.context = context;
 		this.initialWekaClassifier = new FastRandomForest();
 		this.featureSettings = new FeatureSettings(globalSettings, SingleFeatures
-			.identity(), GroupedFeatures.differenceOfGaussians());
+			.identity(), GroupedFeatures.differenceOfGaussians(), GroupedFeatures
+				.gradient(), GroupedFeatures.laplacian(), GroupedFeatures.hessian());
 		this.segmenter = null;
 	}
 
 	public TrainableSegmentationSegmenter(Context context) {
-		GlobalSettings globalSettings = GlobalSettings.default3dSettings();
+		GlobalSettings globalSettings = GlobalSettings.default3d().build();
 		this.context = context;
 		this.initialWekaClassifier = new FastRandomForest();
 		this.featureSettings = new FeatureSettings(globalSettings, SingleFeatures
