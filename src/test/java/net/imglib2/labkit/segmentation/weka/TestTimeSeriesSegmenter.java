@@ -6,7 +6,6 @@ import net.imglib2.img.Img;
 import net.imglib2.img.array.ArrayImgs;
 import net.imglib2.labkit.labeling.Labeling;
 import net.imglib2.labkit.segmentation.Segmenter;
-import net.imglib2.labkit.utils.Notifier;
 import net.imglib2.loops.LoopBuilder;
 import net.imglib2.type.numeric.IntegerType;
 import net.imglib2.type.numeric.RealType;
@@ -18,7 +17,6 @@ import org.junit.Test;
 
 import javax.swing.*;
 import java.util.List;
-import java.util.function.Consumer;
 
 import static org.junit.Assert.assertArrayEquals;
 
@@ -28,9 +26,9 @@ public class TestTimeSeriesSegmenter {
 	public void testPredict() {
 		TimeSeriesSegmenter segmenter = new TimeSeriesSegmenter(
 			new SimpleSegmenter());
-		Img<?> source = ArrayImgs.floats(new float[] { 0.2f, 0.3f, 0.9f }, 3);
+		Img<?> source = ArrayImgs.floats(new float[] { 0.2f, 0.3f, 0.9f }, 1, 1, 3);
 		float[] array = new float[6];
-		Img<FloatType> target = ArrayImgs.floats(array, 3, 2);
+		Img<FloatType> target = ArrayImgs.floats(array, 1, 1, 3, 2);
 		segmenter.predict(source, target);
 		assertArrayEquals(new float[] { 0.2f, 0.3f, 0.9f, 0.8f, 0.7f, 0.1f }, array,
 			0.001f);
