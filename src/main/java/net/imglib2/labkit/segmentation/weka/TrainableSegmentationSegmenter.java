@@ -4,6 +4,7 @@ package net.imglib2.labkit.segmentation.weka;
 import hr.irb.fastRandomForest.FastRandomForest;
 import net.imagej.ImgPlus;
 import net.imagej.axis.Axes;
+import net.imagej.axis.AxisType;
 import net.imagej.ops.OpEnvironment;
 import net.imagej.ops.OpService;
 import net.imglib2.Cursor;
@@ -67,6 +68,24 @@ public class TrainableSegmentationSegmenter implements Segmenter {
 
 	private net.imglib2.trainable_segmention.classification.Segmenter segmenter;
 
+	public static List<Double> getPixelSize(ImgPlus<?> image) {
+		List<Double> pixelSize = new ArrayList<>();
+		double x = getPixelSize(image, Axes.X);
+		double y = getPixelSize(image, Axes.Y);
+		pixelSize.add(1.0);
+		pixelSize.add(y / x);
+		if (ImgPlusViewsOld.hasAxis(image, Axes.Z)) {
+			double z = getPixelSize(image, Axes.Z);
+			pixelSize.add(z / x);
+		}
+		return pixelSize;
+	}
+
+	private static double getPixelSize(ImgPlus<?> image, AxisType axis) {
+		double scale = image.averageScale(image.dimensionIndex(axis));
+		return Double.isNaN(scale) || scale == 0 ? 1.0 : scale;
+	}
+
 	@Override
 	public List<String> classNames() {
 		return segmenter.classNames();
@@ -98,7 +117,9 @@ public class TrainableSegmentationSegmenter implements Segmenter {
 		GlobalSettings globalSettings = GlobalSettings.default2d()
 			.dimensions(ImgPlusViewsOld.numberOfSpatialDimensions(inputImage.imageForSegmentation()))
 			.channels(channelSetting)
-			.sigmaRange(1.0, 8.0).build();
+			.sigmaRange(1.0, 8.0)
+			.pixelSize(getPixelSize(inputImage.imageForSegmentation()))
+			.build();
 		this.context = context;
 		this.initialWekaClassifier = new FastRandomForest();
 		this.featureSettings = new FeatureSettings(globalSettings, SingleFeatures
@@ -117,23 +138,21 @@ public class TrainableSegmentationSegmenter implements Segmenter {
 	}
 
 	@Override
-	public void segment(RandomAccessibleInterval<?> image,
+	public void segment(ImgPlus<?> image,
 		RandomAccessibleInterval<? extends IntegerType<?>> labels)
 	{
 		segmenter.segment(labels, Views.extendBorder(image));
 	}
 
 	@Override
-	public void predict(RandomAccessibleInterval<?> image,
+	public void predict(ImgPlus<?> image,
 		RandomAccessibleInterval<? extends RealType<?>> prediction)
 	{
 		segmenter.predict(Views.collapse(prediction), Views.extendBorder(image));
 	}
 
 	@Override
-	public void train(
-		List<Pair<? extends RandomAccessibleInterval<?>, ? extends Labeling>> trainingData)
-	{
+	public void train(List<Pair<ImgPlus<?>, Labeling>> trainingData) {
 		try {
 			List<String> classes = collectLabels(trainingData.stream().map(Pair::getB)
 				.collect(Collectors.toList()));
