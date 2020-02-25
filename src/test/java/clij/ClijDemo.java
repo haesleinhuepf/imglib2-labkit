@@ -8,8 +8,11 @@ import net.haesleinhuepf.clij.coremem.enums.NativeTypeEnum;
 import net.haesleinhuepf.clij.kernels.Kernels;
 import net.imglib2.FinalInterval;
 import net.imglib2.Interval;
+import net.imglib2.RandomAccessibleInterval;
+import net.imglib2.img.display.imagej.ImageJFunctions;
+import net.imglib2.type.numeric.RealType;
+import net.imglib2.util.Cast;
 import net.imglib2.util.Intervals;
-import net.imglib2.view.Views;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -18,11 +21,28 @@ public class ClijDemo {
 
 	public static void main(String... args) {
 
+		CLIJ clij = CLIJ.getInstance();
 		try {
-			CLIJ clij = CLIJ.getInstance();
 			ImagePlus input = new ImagePlus("/home/arzt/Documents/Datasets/Example/small-3d-stack.tif");
 			input.show();
-			ClearCLBuffer inputCl = clij.push(input);
+			try (ClearCLBuffer inputCl = clij.push(input)) {
+				ClearCLBuffer outputCl = calculateFeatures(clij, inputCl);
+				RandomAccessibleInterval<? extends RealType<?>> image = clij.pullRAI(outputCl);
+				ImagePlus output = clij.pull(outputCl);
+				output.setDisplayRange(0, 255);
+				output.show();
+			}
+		}
+		catch (Throwable t) {
+			t.printStackTrace();
+		}
+		finally {
+			clij.close();
+		}
+	}
+
+	private static ClearCLBuffer calculateFeatures(CLIJ clij, ClearCLBuffer inputCl) {
+		try (ClearCLBuffer tmpCl = clij.createCLBuffer(inputCl)) {
 			int numChannels = 10;
 			ClearCLBuffer outputCl = clij.createCLBuffer(new long[] { inputCl.getWidth(), inputCl
 				.getHeight(), inputCl.getDepth() * numChannels }, NativeTypeEnum.Float);
@@ -30,14 +50,11 @@ public class ClijDemo {
 				Interval sourceInterval = interval(inputCl);
 				FinalInterval destinationInterval = Intervals.translate(sourceInterval, i * inputCl
 					.getDepth(), 2);
-				copy(clij, inputCl, sourceInterval, outputCl, destinationInterval);
+				float sigma = i * 2;
+				clij.op().blur(inputCl, tmpCl, sigma, sigma, sigma);
+				copy(clij, tmpCl, sourceInterval, outputCl, destinationInterval);
 			}
-			ImagePlus output = clij.pull(outputCl);
-			output.setDisplayRange(0, 255);
-			output.show();
-		}
-		catch (Throwable t) {
-			t.printStackTrace();
+			return outputCl;
 		}
 	}
 
