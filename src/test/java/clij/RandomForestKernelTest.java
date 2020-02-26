@@ -1,7 +1,6 @@
 
 package clij;
 
-import ij.IJ;
 import ij.ImagePlus;
 import net.haesleinhuepf.clij.CLIJ;
 import net.haesleinhuepf.clij.clearcl.ClearCLBuffer;
@@ -22,16 +21,22 @@ public class RandomForestKernelTest {
 		try {
 			int width = 3;
 			int height = 1;
+			int depth = 2;
 			int numberOfTrees = 2;
 			int numberOfFeatures = 1;
 			int numberOfClasses = 2;
 			int numberOfNodes = 2;
 			int numberOfLeafs = 3;
-			ClearCLBuffer distributions = clij.create(new long[] { width, height, numberOfClasses },
+			ClearCLBuffer distributions = clij.create(new long[] { width, height, numberOfClasses *
+				depth },
 				NativeTypeEnum.Float);
 			ImagePlus src = ImageJFunctions.wrapFloat(ArrayImgs.floats(
-				new float[] { 41, 43, 45 },
-				width, height, numberOfFeatures), "src");
+				new float[] {
+					41, 43, 45,
+
+					45, 43, 41
+				},
+				width, height, numberOfFeatures * depth), "src");
 			ImagePlus thresholds = ImageJFunctions.wrapFloat(ArrayImgs.floats(
 				new float[] {
 					42, 44,
@@ -66,7 +71,8 @@ public class RandomForestKernelTest {
 				clij.push(probabilities),
 				clij.push(indices),
 				numberOfTrees,
-				numberOfClasses);
+				numberOfClasses,
+				numberOfFeatures);
 
 			RandomAccessibleInterval<? extends RealType<?>> result = clij.pullRAI(distributions);
 			Views.iterable(result).forEach(System.out::println);
@@ -86,9 +92,10 @@ public class RandomForestKernelTest {
 		ClearCLBuffer probabilities,
 		ClearCLBuffer indices,
 		int numberOfTrees,
-		int numberOfClasses)
+		int numberOfClasses,
+		int numberOfFeatures)
 	{
-		long[] globalSizes = { src.getWidth(), src.getHeight() };
+		long[] globalSizes = { src.getWidth(), src.getHeight(), src.getDepth() / numberOfFeatures };
 		Map<String, Object> parameters = new HashMap<>();
 		parameters.put("src", src);
 		parameters.put("dst", distributions);
@@ -97,6 +104,7 @@ public class RandomForestKernelTest {
 		parameters.put("indices", indices);
 		parameters.put("num_trees", numberOfTrees);
 		parameters.put("num_classes", numberOfClasses);
+		parameters.put("num_features", numberOfFeatures);
 		clij.execute(ClijDemo.class, "random_forest.cl", "random_forest", globalSizes,
 			parameters);
 	}
