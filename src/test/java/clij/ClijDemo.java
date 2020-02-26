@@ -22,6 +22,7 @@ import net.imglib2.type.numeric.RealType;
 import net.imglib2.type.numeric.integer.UnsignedByteType;
 import net.imglib2.type.numeric.real.FloatType;
 import net.imglib2.util.Intervals;
+import net.imglib2.util.StopWatch;
 import net.imglib2.view.Views;
 import net.imglib2.view.composite.CompositeIntervalView;
 import net.imglib2.view.composite.RealComposite;
@@ -68,7 +69,7 @@ public class ClijDemo {
 		ImagePlus output)
 	{
 		MyRandomForest forest = new MyRandomForest((FastRandomForest) classifier);
-		RandomForestPrediction prediction = new RandomForestPrediction(forest);
+		RandomForestPrediction prediction = new RandomForestPrediction(forest, 2);
 		RandomAccessibleInterval<FloatType> featureStack =
 			Views.permute(ImageJFunctions.wrapFloat(output), 2, 3);
 		CompositeIntervalView<FloatType, RealComposite<FloatType>> collapsed =
@@ -77,10 +78,12 @@ public class ClijDemo {
 			new CompositeInstance(collapsed.randomAccess().get(), attributes);
 		Img<UnsignedByteType> segmentation =
 			ArrayImgs.unsignedBytes(Intervals.dimensionsAsLongArray(collapsed));
+		StopWatch stopWatch = StopWatch.createAndStart();
 		LoopBuilder.setImages(collapsed, segmentation).forEachPixel((c, o) -> {
 			compositeInstance.setSource(c);
 			o.set(prediction.classifyInstance(compositeInstance));
 		});
+		System.out.println(stopWatch);
 		return segmentation;
 	}
 

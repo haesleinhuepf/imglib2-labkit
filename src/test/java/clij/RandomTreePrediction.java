@@ -5,15 +5,15 @@ import weka.core.Instance;
 
 public class RandomTreePrediction implements SimpleClassifier {
 
-	private final int numberOfNodes;
-	private final int numberOfLeafs;
-	private int nodeCount = 0;
-	private int leafCount = 0;
-	private final int[] attributeIndicies;
-	private final double[] threshold;
-	private final int[] smallerChild;
-	private final int[] biggerChild;
-	private final double[][] classProbabilities;
+	final int numberOfNodes;
+	final int numberOfLeafs;
+	int nodeCount = 0;
+	int leafCount = 0;
+	final int[] attributeIndicies;
+	final double[] threshold;
+	final int[] smallerChild;
+	final int[] biggerChild;
+	final double[][] classProbabilities;
 
 	public RandomTreePrediction(MyRandomTree tree) {
 		this.numberOfLeafs = countLeafs(tree);

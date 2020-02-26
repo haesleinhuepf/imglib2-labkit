@@ -14,4 +14,25 @@ public class ArrayUtils {
 		}
 		return maxIndex;
 	}
+
+	static double[] add(double[] a, double[] b) {
+		for (int i = 0; i < a.length; i++)
+			b[i] += a[i];
+		return b;
+	}
+
+	public static double[] normalize(double[] values) {
+		double sum = sum(values);
+		for (int i = 0; i < values.length; i++) {
+			values[i] /= sum;
+		}
+		return values;
+	}
+
+	private static double sum(double[] values) {
+		double sum = 0;
+		for (double value : values)
+			sum += value;
+		return sum;
+	}
 }
