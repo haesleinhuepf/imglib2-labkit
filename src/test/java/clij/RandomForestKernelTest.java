@@ -76,6 +76,11 @@ public class RandomForestKernelTest {
 
 			RandomAccessibleInterval<? extends RealType<?>> result = clij.pullRAI(distributions);
 			Views.iterable(result).forEach(System.out::println);
+
+			ClearCLBuffer out = clij.createCLBuffer(new long[] { width, height, depth },
+				NativeTypeEnum.Float);
+			maxIndex(clij, distributions, out, numberOfClasses);
+			Views.iterable(clij.pullRAI(out)).forEach(System.out::println);
 		}
 		catch (Throwable t) {
 			t.printStackTrace();
@@ -106,6 +111,20 @@ public class RandomForestKernelTest {
 		parameters.put("num_classes", numberOfClasses);
 		parameters.put("num_features", numberOfFeatures);
 		clij.execute(ClijDemo.class, "random_forest.cl", "random_forest", globalSizes,
+			parameters);
+	}
+
+	private static void maxIndex(CLIJ clij,
+		ClearCLBuffer distributions,
+		ClearCLBuffer dst,
+		int numberOfClasses)
+	{
+		long[] globalSizes = { dst.getWidth(), dst.getHeight(), dst.getDepth() };
+		Map<String, Object> parameters = new HashMap<>();
+		parameters.put("dst", dst);
+		parameters.put("src", distributions);
+		parameters.put("num_classes", numberOfClasses);
+		clij.execute(ClijDemo.class, "max_index.cl", "max_index", globalSizes,
 			parameters);
 	}
 }
