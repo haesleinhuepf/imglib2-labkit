@@ -1,18 +1,34 @@
 
 package clij;
 
+import com.google.gson.JsonElement;
+import hr.irb.fastRandomForest.FastRandomForest;
 import ij.ImagePlus;
 import net.haesleinhuepf.clij.CLIJ;
 import net.haesleinhuepf.clij.clearcl.ClearCLBuffer;
 import net.haesleinhuepf.clij.coremem.enums.NativeTypeEnum;
 import net.haesleinhuepf.clij.kernels.Kernels;
+import net.imagej.ops.OpService;
 import net.imglib2.FinalInterval;
 import net.imglib2.Interval;
 import net.imglib2.RandomAccessibleInterval;
+import net.imglib2.img.Img;
+import net.imglib2.img.array.ArrayImgs;
 import net.imglib2.img.display.imagej.ImageJFunctions;
+import net.imglib2.trainable_segmention.classification.CompositeInstance;
+import net.imglib2.trainable_segmention.classification.Segmenter;
+import net.imglib2.trainable_segmention.gson.GsonUtils;
 import net.imglib2.type.numeric.RealType;
-import net.imglib2.util.Cast;
+import net.imglib2.type.numeric.integer.UnsignedByteType;
+import net.imglib2.type.numeric.real.FloatType;
 import net.imglib2.util.Intervals;
+import net.imglib2.view.Views;
+import net.imglib2.view.composite.CompositeIntervalView;
+import net.imglib2.view.composite.RealComposite;
+import org.scijava.Context;
+import preview.net.imglib2.loops.LoopBuilder;
+import weka.classifiers.Classifier;
+import weka.core.Attribute;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -22,15 +38,22 @@ public class ClijDemo {
 	public static void main(String... args) {
 
 		CLIJ clij = CLIJ.getInstance();
+		OpService ops = new Context().service(OpService.class);
+		JsonElement read = GsonUtils.read(
+			"/home/arzt/devel/labkit/imglib2-labkit/src/test/java/clij/test.classifier");
+		Segmenter segmenter = Segmenter.fromJson(ops, read);
+		Classifier classifier = segmenter.getClassifier();
+		Attribute[] attributes = segmenter.attributesAsArray();
 		try {
 			ImagePlus input = new ImagePlus("/home/arzt/Documents/Datasets/Example/small-3d-stack.tif");
 			input.show();
 			try (ClearCLBuffer inputCl = clij.push(input)) {
 				ClearCLBuffer outputCl = calculateFeatures(clij, inputCl);
 				RandomAccessibleInterval<? extends RealType<?>> image = clij.pullRAI(outputCl);
-				ImagePlus output = clij.pull(outputCl);
-				output.setDisplayRange(0, 255);
-				output.show();
+				ImagePlus features = clij.pull(outputCl);
+				features.setStack(features.getStack(), 10, input.getNSlices(), 1);
+				Img<UnsignedByteType> segmentation = segment(classifier, attributes, features);
+				ImageJFunctions.show(segmentation).setDisplayRange(0, 1);
 			}
 		}
 		catch (Throwable t) {
@@ -41,21 +64,50 @@ public class ClijDemo {
 		}
 	}
 
+	private static Img<UnsignedByteType> segment(Classifier classifier, Attribute[] attributes,
+		ImagePlus output)
+	{
+		MyRandomForest forest = new MyRandomForest((FastRandomForest) classifier);
+		RandomAccessibleInterval<FloatType> featureStack =
+			Views.permute(ImageJFunctions.wrapFloat(output), 2, 3);
+		CompositeIntervalView<FloatType, RealComposite<FloatType>> collapsed =
+			Views.collapseReal(featureStack);
+		CompositeInstance compositeInstance =
+			new CompositeInstance(collapsed.randomAccess().get(), attributes);
+		Img<UnsignedByteType> segmentation =
+			ArrayImgs.unsignedBytes(Intervals.dimensionsAsLongArray(collapsed));
+		LoopBuilder.setImages(collapsed, segmentation).forEachPixel((c, o) -> {
+			compositeInstance.setSource(c);
+			o.set(forest.classifyInstance(compositeInstance));
+		});
+		return segmentation;
+	}
+
 	private static ClearCLBuffer calculateFeatures(CLIJ clij, ClearCLBuffer inputCl) {
 		try (ClearCLBuffer tmpCl = clij.createCLBuffer(inputCl)) {
 			int numChannels = 10;
 			ClearCLBuffer outputCl = clij.createCLBuffer(new long[] { inputCl.getWidth(), inputCl
 				.getHeight(), inputCl.getDepth() * numChannels }, NativeTypeEnum.Float);
 			for (int i = 0; i < numChannels; i++) {
-				Interval sourceInterval = interval(inputCl);
-				FinalInterval destinationInterval = Intervals.translate(sourceInterval, i * inputCl
-					.getDepth(), 2);
 				float sigma = i * 2;
 				clij.op().blur(inputCl, tmpCl, sigma, sigma, sigma);
-				copy(clij, tmpCl, sourceInterval, outputCl, destinationInterval);
+				copy3dStack(clij, tmpCl, outputCl, i, numChannels);
 			}
 			return outputCl;
 		}
+	}
+
+	private static void copy3dStack(CLIJ clij, ClearCLBuffer input, ClearCLBuffer output, int offset,
+		int step)
+	{
+		long[] globalSizes = input.getDimensions();
+		Map<String, Object> parameters = new HashMap<>();
+		parameters.put("src", input);
+		parameters.put("dst", output);
+		parameters.put("offset", offset);
+		parameters.put("step", step);
+		clij.execute(ClijDemo.class, "copy_3d_stack.cl", "copy_3d_stack", globalSizes,
+			parameters);
 	}
 
 	private static void copy(CLIJ clij, ClearCLBuffer inputCl, Interval sourceInterval,
