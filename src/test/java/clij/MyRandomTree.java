@@ -69,7 +69,7 @@ public class MyRandomTree implements SimpleClassifier {
 		}
 	}
 
-	private boolean isLeaf() {
+	public boolean isLeaf() {
 		return attribute == -1;
 	}
 }

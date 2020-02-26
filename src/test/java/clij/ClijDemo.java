@@ -68,6 +68,7 @@ public class ClijDemo {
 		ImagePlus output)
 	{
 		MyRandomForest forest = new MyRandomForest((FastRandomForest) classifier);
+		RandomForestPrediction prediction = new RandomForestPrediction(forest);
 		RandomAccessibleInterval<FloatType> featureStack =
 			Views.permute(ImageJFunctions.wrapFloat(output), 2, 3);
 		CompositeIntervalView<FloatType, RealComposite<FloatType>> collapsed =
@@ -78,7 +79,7 @@ public class ClijDemo {
 			ArrayImgs.unsignedBytes(Intervals.dimensionsAsLongArray(collapsed));
 		LoopBuilder.setImages(collapsed, segmentation).forEachPixel((c, o) -> {
 			compositeInstance.setSource(c);
-			o.set(forest.classifyInstance(compositeInstance));
+			o.set(prediction.classifyInstance(compositeInstance));
 		});
 		return segmentation;
 	}
