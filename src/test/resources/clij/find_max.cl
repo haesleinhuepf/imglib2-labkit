@@ -1,6 +1,6 @@
 __constant sampler_t sampler = CLK_NORMALIZED_COORDS_FALSE | CLK_ADDRESS_CLAMP_TO_EDGE | CLK_FILTER_NEAREST;
 
-__kernel void max_index
+__kernel void find_max
 (
   __global float* dst,
   __global float* src,
@@ -12,9 +12,10 @@ __kernel void max_index
 
   // normalize distribution
   int maxIndex = 0;
-  float maxValue = 0;
-  for(int i = 0; i < num_classes; i++) {
-    int4 pos = (int4)(x,y,i + offset,0);
+  int4 pos = (int4)(x,y,offset,0);
+  float maxValue = READ_IMAGE_3D(src, sampler, pos).x;
+  for(int i = 1; i < num_classes; i++) {
+    pos.z = i + offset;
     float value = READ_IMAGE_3D(src, sampler, pos).x;
     bool bigger = value > maxValue;
     maxValue = bigger ? value : maxValue;
