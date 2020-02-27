@@ -6,6 +6,7 @@ import hr.irb.fastRandomForest.FastRandomForest;
 import ij.ImagePlus;
 import net.haesleinhuepf.clij.CLIJ;
 import net.haesleinhuepf.clij.clearcl.ClearCLBuffer;
+import net.haesleinhuepf.clij.clearcl.util.ElapsedTime;
 import net.haesleinhuepf.clij.coremem.enums.NativeTypeEnum;
 import net.haesleinhuepf.clij.kernels.Kernels;
 import net.imagej.ops.OpService;
@@ -21,6 +22,7 @@ import net.imglib2.trainable_segmention.gson.GsonUtils;
 import net.imglib2.type.numeric.RealType;
 import net.imglib2.type.numeric.integer.UnsignedByteType;
 import net.imglib2.type.numeric.real.FloatType;
+import net.imglib2.util.Cast;
 import net.imglib2.util.Intervals;
 import net.imglib2.util.StopWatch;
 import net.imglib2.view.Views;
@@ -36,6 +38,9 @@ import java.util.Map;
 
 public class ClijDemo {
 
+	private static final int numberOfFeatures = 10;
+	private static final int numberOfClasses = 2;
+
 	public static void main(String... args) {
 
 		CLIJ clij = CLIJ.getInstance();
@@ -45,17 +50,22 @@ public class ClijDemo {
 		Segmenter segmenter = Segmenter.fromJson(ops, read);
 		Classifier classifier = segmenter.getClassifier();
 		Attribute[] attributes = segmenter.attributesAsArray();
+		ElapsedTime.sStandardOutput = true;
 		try {
 			ImagePlus input = new ImagePlus("/home/arzt/Documents/Datasets/Example/small-3d-stack.tif");
 			input.show();
-			try (ClearCLBuffer inputCl = clij.push(input)) {
-				ClearCLBuffer outputCl = calculateFeatures(clij, inputCl);
-				RandomAccessibleInterval<? extends RealType<?>> image = clij.pullRAI(outputCl);
-				ImagePlus features = clij.pull(outputCl);
-				features.setStack(features.getStack(), 10, input.getNSlices(), 1);
-				Img<UnsignedByteType> segmentation = segment(classifier, attributes, features);
-				ImageJFunctions.show(segmentation).setDisplayRange(0, 1);
+			RandomAccessibleInterval<? extends RealType<?>> image;
+			StopWatch stopWatch = StopWatch.createAndStart();
+			try (
+				ClearCLBuffer inputCl = clij.push(input);
+				ClearCLBuffer featuresCl = calculateFeatures(clij, inputCl);
+				ClearCLBuffer distributionCl = calculateDistribution(clij, classifier, featuresCl);
+				ClearCLBuffer segmentationCl = calculateSegmentation(clij, distributionCl))
+			{
+				image = clij.pullRAI(segmentationCl);
 			}
+			System.out.println(stopWatch);
+			ImageJFunctions.show(Cast.unchecked(image)).setDisplayRange(0, 1);
 		}
 		catch (Throwable t) {
 			t.printStackTrace();
@@ -63,6 +73,26 @@ public class ClijDemo {
 		finally {
 			clij.close();
 		}
+	}
+
+	private static ClearCLBuffer calculateSegmentation(CLIJ clij, ClearCLBuffer distribution) {
+		long slices = distribution.getDepth() / numberOfClasses;
+		ClearCLBuffer result = clij.createCLBuffer(new long[] { distribution.getWidth(), distribution
+			.getHeight(), slices }, NativeTypeEnum.Float);
+		ClijRandomForestKernel.findMax(clij, distribution, result, numberOfClasses);
+		return result;
+	}
+
+	private static ClearCLBuffer calculateDistribution(CLIJ clij, Classifier classifier,
+		ClearCLBuffer featuresCl)
+	{
+		RandomForestPrediction prediction = new RandomForestPrediction(new MyRandomForest(Cast
+			.unchecked(classifier)), 2);
+		long slices = featuresCl.getDepth() / numberOfFeatures;
+		ClearCLBuffer distribution = clij.createCLBuffer(new long[] { featuresCl.getWidth(), featuresCl
+			.getHeight(), slices * numberOfClasses }, NativeTypeEnum.Float);
+		prediction.distribution(clij, featuresCl, distribution);
+		return distribution;
 	}
 
 	private static Img<UnsignedByteType> segment(Classifier classifier, Attribute[] attributes,
@@ -89,13 +119,12 @@ public class ClijDemo {
 
 	private static ClearCLBuffer calculateFeatures(CLIJ clij, ClearCLBuffer inputCl) {
 		try (ClearCLBuffer tmpCl = clij.createCLBuffer(inputCl)) {
-			int numChannels = 10;
 			ClearCLBuffer outputCl = clij.createCLBuffer(new long[] { inputCl.getWidth(), inputCl
-				.getHeight(), inputCl.getDepth() * numChannels }, NativeTypeEnum.Float);
-			for (int i = 0; i < numChannels; i++) {
+				.getHeight(), inputCl.getDepth() * numberOfFeatures }, NativeTypeEnum.Float);
+			for (int i = 0; i < numberOfFeatures; i++) {
 				float sigma = i * 2;
 				clij.op().blur(inputCl, tmpCl, sigma, sigma, sigma);
-				copy3dStack(clij, tmpCl, outputCl, i, numChannels);
+				copy3dStack(clij, tmpCl, outputCl, i, numberOfFeatures);
 			}
 			return outputCl;
 		}

@@ -15,10 +15,7 @@ import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 
-import java.util.HashMap;
-import java.util.Map;
-
-public class RandomForestKernelTest {
+public class ClijRandomForestKernelTest {
 
 	private static CLIJ clij;
 
@@ -69,7 +66,7 @@ public class RandomForestKernelTest {
 			0, 0, 0
 		}, 3, numberOfNodes, numberOfTrees);
 
-		randomForest(clij,
+		ClijRandomForestKernel.randomForest(clij,
 			distributions,
 			clij.push(src),
 			clij.push(thresholds),
@@ -104,7 +101,7 @@ public class RandomForestKernelTest {
 			-3, -3, -2, -1
 		}, 2, 2, 6);
 		ClearCLBuffer outputBuffer = clij.createCLBuffer(new long[] { 2, 2, 2 }, NativeTypeEnum.Float);
-		findMax(clij, clij.push(input), outputBuffer, 3);
+		ClijRandomForestKernel.findMax(clij, clij.push(input), outputBuffer, 3);
 		RandomAccessibleInterval<? extends RealType<?>> result = clij.pullRAI(outputBuffer);
 		RandomAccessibleInterval<FloatType> expected = ArrayImgs.floats(new float[] {
 			2, 0, 1, 2,
@@ -113,41 +110,4 @@ public class RandomForestKernelTest {
 		ImgLib2Assert.assertImageEqualsRealType(expected, result, 0.0);
 	}
 
-	private static void randomForest(CLIJ clij,
-		ClearCLBuffer distributions,
-		ClearCLBuffer src,
-		ClearCLBuffer thresholds,
-		ClearCLBuffer probabilities,
-		ClearCLBuffer indices,
-		int numberOfTrees,
-		int numberOfClasses,
-		int numberOfFeatures)
-	{
-		long[] globalSizes = { src.getWidth(), src.getHeight(), src.getDepth() / numberOfFeatures };
-		Map<String, Object> parameters = new HashMap<>();
-		parameters.put("src", src);
-		parameters.put("dst", distributions);
-		parameters.put("thresholds", thresholds);
-		parameters.put("probabilities", probabilities);
-		parameters.put("indices", indices);
-		parameters.put("num_trees", numberOfTrees);
-		parameters.put("num_classes", numberOfClasses);
-		parameters.put("num_features", numberOfFeatures);
-		clij.execute(ClijDemo.class, "random_forest.cl", "random_forest", globalSizes,
-			parameters);
-	}
-
-	private static void findMax(CLIJ clij,
-		ClearCLBuffer distributions,
-		ClearCLBuffer dst,
-		int numberOfClasses)
-	{
-		long[] globalSizes = { dst.getWidth(), dst.getHeight(), dst.getDepth() };
-		Map<String, Object> parameters = new HashMap<>();
-		parameters.put("dst", dst);
-		parameters.put("src", distributions);
-		parameters.put("num_classes", numberOfClasses);
-		clij.execute(ClijDemo.class, "find_max.cl", "find_max", globalSizes,
-			parameters);
-	}
 }

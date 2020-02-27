@@ -1,6 +1,14 @@
 
 package clij;
 
+import net.haesleinhuepf.clij.CLIJ;
+import net.haesleinhuepf.clij.clearcl.ClearCLBuffer;
+import net.imglib2.converter.RealTypeConverters;
+import net.imglib2.img.Img;
+import net.imglib2.img.array.ArrayImgs;
+import net.imglib2.type.numeric.RealType;
+import net.imglib2.type.numeric.real.FloatType;
+import net.imglib2.util.Intervals;
 import weka.core.Instance;
 
 import java.util.List;
@@ -8,66 +16,89 @@ import java.util.stream.Collectors;
 
 public class RandomForestPrediction implements SimpleClassifier {
 
-	private final MyRandomForest forest;
-
-	private final List<RandomTreePrediction> trees;
-
-	private final MajorityClassifier majority;
-
 	private final int numberOfClasses;
 
 	private final int numberOfTrees;
 
-	private final int[][][] nodeIndicies;
+	private final int numberOfNodes;
 
-	private final double[][] nodeThresholds;
+	private final int numberOfLeafs;
 
-	private final double[][][] classProbabilities;
+	private final int[] nodeIndices;
+
+	private final double[] nodeThresholds;
+
+	private final double[] leafProbabilities;
 
 	public RandomForestPrediction(MyRandomForest forest, int numberOfClasses) {
-		this.forest = forest;
-		this.trees = forest.trees().stream().map(RandomTreePrediction::new).collect(Collectors
-			.toList());
-		this.majority = new MajorityClassifier(trees);
+		List<RandomTreePrediction> trees = forest.trees().stream().map(RandomTreePrediction::new)
+			.collect(Collectors.toList());
 		this.numberOfClasses = numberOfClasses;
 		this.numberOfTrees = trees.size();
-		int maxNumberOfNodes = trees.stream().mapToInt(x -> x.numberOfNodes).max().getAsInt();
-		int maxNumberOfLeafs = trees.stream().mapToInt(x -> x.numberOfLeafs).max().getAsInt();
-		this.nodeIndicies = new int[numberOfTrees][maxNumberOfNodes][3];
-		this.nodeThresholds = new double[numberOfTrees][maxNumberOfNodes];
-		this.classProbabilities = new double[numberOfTrees][maxNumberOfLeafs][numberOfClasses];
+		this.numberOfNodes = trees.stream().mapToInt(x -> x.numberOfNodes).max().getAsInt();
+		this.numberOfLeafs = trees.stream().mapToInt(x -> x.numberOfLeafs).max().getAsInt();
+		this.nodeIndices = new int[numberOfTrees * numberOfNodes * 3];
+		this.nodeThresholds = new double[numberOfTrees * numberOfNodes];
+		this.leafProbabilities = new double[numberOfTrees * numberOfLeafs * numberOfClasses];
 		for (int j = 0; j < numberOfTrees; j++) {
 			RandomTreePrediction tree = trees.get(j);
 			for (int i = 0; i < tree.numberOfNodes; i++) {
-				nodeIndicies[j][i][0] = tree.attributeIndicies[i];
-				nodeIndicies[j][i][1] = tree.smallerChild[i];
-				nodeIndicies[j][i][2] = tree.biggerChild[i];
-				nodeThresholds[j][i] = tree.threshold[i];
+				nodeIndices[(j * numberOfNodes + i) * 3] = tree.attributeIndicies[i];
+				nodeIndices[(j * numberOfNodes + i) * 3 + 1] = tree.smallerChild[i];
+				nodeIndices[(j * numberOfNodes + i) * 3 + 2] = tree.biggerChild[i];
+				nodeThresholds[j * numberOfNodes + i] = tree.threshold[i];
 			}
 			for (int i = 0; i < tree.leafCount; i++)
 				for (int k = 0; k < numberOfClasses; k++)
-					classProbabilities[j][i][k] = tree.classProbabilities[i][k];
+					leafProbabilities[(j * numberOfLeafs + i) * numberOfClasses + k] =
+						tree.classProbabilities[i][k];
 		}
 	}
 
 	@Override
 	public double[] distributionForInstance(Instance instance) {
 		double[] distribution = new double[numberOfClasses];
-		for (int j = 0; j < numberOfTrees; j++) {
-			addDistributionForTree(instance, j, distribution);
+		for (int tree = 0; tree < numberOfTrees; tree++) {
+			addDistributionForTree(instance, tree, distribution);
 		}
 		return ArrayUtils.normalize(distribution);
 	}
 
 	private void addDistributionForTree(Instance instance, int tree, double[] distribution) {
-		int nodeIndex = 0;
-		while (nodeIndex >= 0) {
-			int attributeIndex = nodeIndicies[tree][nodeIndex][0];
+		int node = 0;
+		while (node >= 0) {
+			int attributeIndex = nodeIndices[(tree * numberOfNodes + node) * 3];
 			double attributeValue = instance.value(attributeIndex);
-			int b = attributeValue < nodeThresholds[tree][nodeIndex] ? 1 : 2;
-			nodeIndex = nodeIndicies[tree][nodeIndex][b];
+			int b = attributeValue < nodeThresholds[(tree * numberOfNodes) + node] ? 1 : 2;
+			node = nodeIndices[(tree * numberOfNodes + node) * 3 + b];
 		}
-		int leafIndex = -1 - nodeIndex;
-		ArrayUtils.add(classProbabilities[tree][leafIndex], distribution);
+		int leaf = -1 - node;
+		for (int k = 0; k < numberOfClasses; k++)
+			distribution[k] += leafProbabilities[(tree * numberOfLeafs + leaf) * numberOfClasses + k];
+	}
+
+	public void distribution(CLIJ clij, ClearCLBuffer features, ClearCLBuffer distribution) {
+		long numberOfSlices = distribution.getDepth() / numberOfClasses;
+		int numberOfFeatures = (int) (features.getDepth() / numberOfSlices);
+		Img<FloatType> indices = asFloats(ArrayImgs.ints(nodeIndices, 3, numberOfNodes, numberOfTrees));
+		Img<FloatType> thresholds = asFloats(ArrayImgs.doubles(nodeThresholds, 1, numberOfNodes,
+			numberOfTrees));
+		Img<FloatType> probabilities = asFloats(ArrayImgs.doubles(leafProbabilities, numberOfClasses,
+			numberOfLeafs, numberOfTrees));
+		ClijRandomForestKernel.randomForest(clij,
+			distribution,
+			features,
+			clij.push(thresholds),
+			clij.push(probabilities),
+			clij.push(indices),
+			numberOfTrees,
+			numberOfClasses,
+			numberOfFeatures);
+	}
+
+	private Img<FloatType> asFloats(Img<? extends RealType<?>> ints) {
+		Img<FloatType> result = ArrayImgs.floats(Intervals.dimensionsAsLongArray(ints));
+		RealTypeConverters.copyFromTo(ints, result);
+		return result;
 	}
 }
